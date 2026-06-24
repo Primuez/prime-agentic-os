@@ -1,0 +1,24 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:../db.sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model AgentState {
+  id           String   @id
+  status       String
+  current_task String?
+  updated_at   DateTime @updatedAt
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  status      String   // TODO, DOING, REVIEW, DONE
+  assigned_to String?
+  created_at  DateTime @default(now())
+}
