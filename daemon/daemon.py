@@ -9,8 +9,10 @@ from datetime import datetime
 # Read config
 CONFIG_PATH = "agent.config.json"
 def load_config():
-    with open(CONFIG_PATH, "r") as f:
-        return json.load(f)
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r") as f:
+            return json.load(f)
+    return {}
 
 config = load_config()
 
@@ -21,14 +23,14 @@ os.makedirs(OBSIDIAN_VAULT, exist_ok=True)
 os.makedirs(ARTIFACT_VAULT, exist_ok=True)
 
 class ExecutionAdapter:
-    def execute(self, prompt, workdir):
+    def execute(self, prompt, workdir, model=None, system=None):
         pass
 
 class CLISpawnAdapter(ExecutionAdapter):
     def __init__(self, binary_cmd):
         self.cmd = binary_cmd
         
-    def execute(self, prompt, workdir):
+    def execute(self, prompt, workdir, model=None, system=None):
         command = [c.replace("{prompt}", prompt) for c in self.cmd]
         process = subprocess.Popen(command, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for line in process.stdout:
@@ -38,13 +40,21 @@ class GatewayHTTPAdapter(ExecutionAdapter):
     def __init__(self, endpoint):
         self.endpoint = endpoint
         
-    def execute(self, prompt, workdir):
-        payload = {"messages": [{"role": "user", "content": prompt}], "stream": True}
+    def execute(self, prompt, workdir, model=None, system=None):
+        # Allow custom model override for council members, fallback to config/default
+        payload = {
+            "messages": [{"role": "user", "content": prompt}], 
+            "stream": False
+        }
+        if model:
+            payload["model"] = model
+        if system:
+            payload["messages"].insert(0, {"role": "system", "content": system})
+            
         try:
-            with requests.post(self.endpoint, json=payload, stream=True) as r:
-                for chunk in r.iter_content(chunk_size=1024):
-                    if chunk:
-                        yield chunk.decode('utf-8', errors='replace')
+            r = requests.post(self.endpoint, json=payload)
+            r.raise_for_status()
+            yield r.json().get("choices", [{}])[0].get("message", {}).get("content", "")
         except Exception as e:
             yield f"Error calling HTTP Gateway: {e}"
 
@@ -52,9 +62,10 @@ def get_adapter():
     if config.get("engine_type") == "cli":
         return CLISpawnAdapter(config.get("exec_command"))
     elif config.get("engine_type") == "http":
-        return GatewayHTTPAdapter(config.get("endpoint"))
+        # Fallback to local 8642 if not provided
+        return GatewayHTTPAdapter(config.get("endpoint", "http://127.0.0.1:8642/v1/chat/completions"))
     else:
-        raise ValueError("Unknown engine_type")
+        return GatewayHTTPAdapter("http://127.0.0.1:8642/v1/chat/completions")
 
 def push_state(agent_id, status, current_task=None):
     payload = {
@@ -67,36 +78,49 @@ def push_state(agent_id, status, current_task=None):
     except Exception as e:
         print(f"Failed to push state: {e}")
 
-def run_task(agent_id, prompt):
-    push_state(agent_id, "THINKING", prompt)
+def dream_sequence():
+    """
+    Overnight Cron: The LLM Council Debate.
+    Instead of just dreaming alone, the Orchestrator initiates a council session.
+    1. Reads memory/goals.
+    2. Socrates critiques and provides analytical strategy.
+    3. Da Vinci provides creative implementation & UI flair.
+    4. Orchestrator synthesizes into the final Morning Brief.
+    """
+    print("Initiating Nightly Dream Sequence & LLM Council Debate...")
+    push_state("OS_DREAM_COUNCIL", "THINKING", "Gathering Yesterday's Context")
+    
     adapter = get_adapter()
     
-    output_log = ""
-    push_state(agent_id, "EXECUTING", prompt)
+    # Base context
+    context = "Goal: Get more high-ticket clients for the user. Yesterday's logs: Built Universal OS architecture."
     
-    for chunk in adapter.execute(prompt, ARTIFACT_VAULT):
-        output_log += chunk
-        print(chunk, end="")
-        
-    push_state(agent_id, "SUCCESS", prompt)
+    # 1. Socrates (Philosopher/Logician)
+    push_state("SOCRATES", "THINKING", "Philosophical & Logical Debate")
+    socrates_prompt = f"Analyze the following context logically. Find weaknesses in our acquisition strategy and propose a rigorous philosophical/systematic approach.\nContext: {context}"
+    socrates_response = "".join(adapter.execute(socrates_prompt, ARTIFACT_VAULT, system="You are Socrates, a highly logical architect."))
     
-    # Save log
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_path = os.path.join(ARTIFACT_VAULT, f"{timestamp}_task.log")
-    with open(log_path, "w") as f:
-        f.write(output_log)
-
-def dream_sequence():
-    print("Initiating Nightly Dream Sequence...")
-    push_state("OS_DREAM", "THINKING", "Dream Sequence")
-    time.sleep(2)
-    # Placeholder for actual analysis
-    artifact_path = os.path.join(ARTIFACT_VAULT, f"Morning_Briefing_{datetime.now().strftime('%Y-%m-%d')}.md")
+    # 2. Da Vinci (Artist/Creative)
+    push_state("DA_VINCI", "THINKING", "Creative Integration")
+    davinci_prompt = f"Socrates just proposed this logical strategy: {socrates_response}. Now, add creative, artistic flair and unique UI/UX growth hacks to this plan."
+    davinci_response = "".join(adapter.execute(davinci_prompt, ARTIFACT_VAULT, system="You are Da Vinci, an elite UI/UX artist and creative genius."))
+    
+    # 3. Hermes/Orchestrator (Synthesis)
+    push_state("ORCHESTRATOR", "EXECUTING", "Perfecting Morning Briefing")
+    final_prompt = f"Synthesize the debate between Socrates and Da Vinci perfectly into a finalized implementation plan for the user.\nSocrates: {socrates_response}\nDa Vinci: {davinci_response}"
+    final_plan = "".join(adapter.execute(final_prompt, ARTIFACT_VAULT, system="You are the Orchestrator. Finalize the optimal plan."))
+    
+    # Save the Artifact
+    timestamp = datetime.now().strftime('%Y-%m-%d')
+    artifact_path = os.path.join(ARTIFACT_VAULT, f"Morning_Briefing_Council_{timestamp}.md")
+    
+    briefing_content = f"# Morning Briefing: {timestamp}\n\n## The Council Debate\n\n### Socrates' Logical Analysis\n{socrates_response}\n\n### Da Vinci's Creative Vision\n{davinci_response}\n\n## 🚀 Final Implementation Plan\n{final_plan}"
+    
     with open(artifact_path, "w") as f:
-        f.write("# Morning Briefing\n\nDream sequence ran successfully.")
+        f.write(briefing_content)
     
-    push_state("OS_DREAM", "SUCCESS", "Dream Sequence Generated")
-    print(f"Saved to {artifact_path}")
+    push_state("OS_DREAM_COUNCIL", "SUCCESS", f"Morning Briefing saved to {artifact_path}")
+    print(f"Council finished. Saved to {artifact_path}")
 
 def scheduler_loop():
     import schedule
@@ -110,6 +134,5 @@ if __name__ == "__main__":
     # Run scheduler in background
     threading.Thread(target=scheduler_loop, daemon=True).start()
     
-    # Keep alive or host basic input loop
     while True:
         time.sleep(3600)
