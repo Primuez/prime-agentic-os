@@ -63,7 +63,7 @@ export default function DashboardPage() {
           <div className="flex flex-col gap-3">
             {[
               { name: 'Hermes VPS Gateway', status: 'Connected', ping: '12ms' },
-              { name: 'Antigravity CLI', status: 'Connected', ping: '1ms' },
+              { name: 'Antigravity CLI (Local)', status: 'Connected', ping: '1ms' },
               { name: 'Claude Code', status: 'Idle', ping: '-' },
               { name: 'OpenClaw RPC', status: 'Offline', ping: 'ERR' }
             ].map(engine => (
