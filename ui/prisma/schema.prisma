@@ -1,6 +1,5 @@
 datasource db {
   provider = "sqlite"
-  url      = "file:../db.sqlite"
 }
 
 generator client {
@@ -9,16 +8,30 @@ generator client {
 
 model AgentState {
   id           String   @id
+  persona      String?  @default("default")
   status       String
   current_task String?
   updated_at   DateTime @updatedAt
+  tasks        Task[]   @relation("AgentTasks")
+}
+
+model Mission {
+  id          String    @id @default(cuid())
+  title       String
+  directive   String
+  status      String    // PENDING, ACTIVE, COMPLETED, FAILED
+  created_at  DateTime  @default(now())
+  tasks       Task[]
 }
 
 model Task {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  status      String   // TODO, DOING, REVIEW, DONE
-  assigned_to String?
-  created_at  DateTime @default(now())
+  id            String      @id @default(cuid())
+  title         String
+  description   String?
+  status        String      // TODO, DOING, REVIEW, DONE
+  mission_id    String?
+  assigned_to   String?
+  agent         AgentState? @relation("AgentTasks", fields: [assigned_to], references: [id])
+  mission       Mission?    @relation(fields: [mission_id], references: [id])
+  created_at    DateTime    @default(now())
 }
