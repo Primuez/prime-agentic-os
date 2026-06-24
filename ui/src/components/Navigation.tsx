@@ -9,6 +9,7 @@ export default function Navigation() {
       <Link href="/kanban" className="px-4 xl:px-6 py-2 rounded-lg hover:bg-white/10 text-xs xl:text-sm font-semibold tracking-wider text-white transition-colors">KANBAN</Link>
       <Link href="/operations" className="px-4 xl:px-6 py-2 rounded-lg hover:bg-white/10 text-xs xl:text-sm font-semibold tracking-wider text-white transition-colors">SWARM</Link>
       <Link href="/profiles" className="px-4 xl:px-6 py-2 rounded-lg hover:bg-white/10 text-xs xl:text-sm font-semibold tracking-wider text-white transition-colors">PROFILES</Link>
+      <Link href="/sessions" className="px-6 py-2 rounded-lg hover:bg-white/10 text-sm font-semibold tracking-wider text-white transition-colors">SESSIONS</Link>
     </nav>
   );
 }
