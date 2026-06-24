@@ -5,8 +5,9 @@ import subprocess
 import requests
 import threading
 from datetime import datetime
+from persona_manager import load_or_create_personas
 
-# Read configs and paths
+# Read config
 CONFIG_PATH = "agent.config.json"
 def load_config():
     if os.path.exists(CONFIG_PATH):
@@ -18,25 +19,9 @@ config = load_config()
 
 OBSIDIAN_VAULT = os.path.expanduser(config.get("obsidian_vault", "~/Universal-Agent-OS/memory"))
 ARTIFACT_VAULT = os.path.expanduser(config.get("artifacts_dir", "~/Universal-Agent-OS/artifacts"))
-PERSONAS_DIR = os.path.join(os.path.dirname(__file__), "../personas")
 
 os.makedirs(OBSIDIAN_VAULT, exist_ok=True)
 os.makedirs(ARTIFACT_VAULT, exist_ok=True)
-os.makedirs(PERSONAS_DIR, exist_ok=True)
-
-def load_persona(persona_name):
-    """Loads a persona definition, which acts as a group of skills."""
-    filepath = os.path.join(PERSONAS_DIR, f"{persona_name.lower()}.json")
-    if os.path.exists(filepath):
-        with open(filepath, "r") as f:
-            data = json.load(f)
-            # Combine the systemic worldview with its embedded skills
-            skills_list = ", ".join(data.get("skills", []))
-            system = data.get("system_prompt", "")
-            if skills_list:
-                system += f"\n\n[BOUNDED SKILLS]: You possess the following procedural skills and must apply their methodologies: {skills_list}."
-            return system
-    return f"You are {persona_name}."
 
 class ExecutionAdapter:
     def execute(self, prompt, workdir, model=None, system=None):
@@ -57,6 +42,7 @@ class GatewayHTTPAdapter(ExecutionAdapter):
         self.endpoint = endpoint
         
     def execute(self, prompt, workdir, model=None, system=None):
+        # Allow custom model override for council members, fallback to config/default
         payload = {
             "messages": [{"role": "user", "content": prompt}], 
             "stream": False
@@ -76,7 +62,10 @@ class GatewayHTTPAdapter(ExecutionAdapter):
 def get_adapter():
     if config.get("engine_type") == "cli":
         return CLISpawnAdapter(config.get("exec_command"))
-    return GatewayHTTPAdapter(config.get("endpoint", "http://127.0.0.1:8642/v1/chat/completions"))
+    elif config.get("engine_type") == "http":
+        return GatewayHTTPAdapter(config.get("endpoint", "http://127.0.0.1:8642/v1/chat/completions"))
+    else:
+        return GatewayHTTPAdapter("http://127.0.0.1:8642/v1/chat/completions")
 
 def push_state(agent_id, status, current_task=None):
     payload = {
@@ -86,48 +75,62 @@ def push_state(agent_id, status, current_task=None):
     }
     try:
         requests.post("http://localhost:3000/api/webhooks/agent-state", json=payload)
-    except:
-        pass
+    except Exception as e:
+        pass # Silent fail for webhook if UI not running
 
 def dream_sequence():
     """
-    Overnight Cron: The LLM Council Debate.
-    Each personality pulls its specific payload of grouped skills.
+    Overnight Cron: The Dynamic LLM Council Debate.
+    Reads dynamically mapped personas (auto-generated from local skills or manually specified).
     """
-    print("Initiating Nightly Dream Sequence & LLM Council Debate...")
+    print("Initiating Nightly Dream Sequence & Dynamic LLM Council Debate...")
     push_state("OS_DREAM_COUNCIL", "THINKING", "Gathering Yesterday's Context")
     
     adapter = get_adapter()
-    context = "Goal: Get more high-ticket clients for the user. Identify execution gaps."
+    # If HTTP adapter, grab endpoint, else fallback to standard local
+    gateway_url = config.get("endpoint", "http://127.0.0.1:8642/v1/chat/completions")
     
-    # 1. Socrates (Deep Thinker & Debugger - Loads Analytical Skills)
-    push_state("SOCRATES", "THINKING", "Philosophical & Logical Debate")
-    socrates_sys = load_persona("socrates")
-    socrates_prompt = f"Analyze the following logically. Find weaknesses in our strategy and propose a rigorous approach.\nContext: {context}"
-    socrates_response = "".join(adapter.execute(socrates_prompt, ARTIFACT_VAULT, system=socrates_sys))
+    # 1. Fetch active personas (manual overrides or auto-grouped by skill engine)
+    personas = load_or_create_personas(gateway_url)
     
-    # 2. Da Vinci (Creative & UI Artist - Loads Design Skills)
-    push_state("DA_VINCI", "THINKING", "Creative Integration")
-    davinci_sys = load_persona("davinci")
-    davinci_prompt = f"Socrates just proposed this logical strategy: {socrates_response}. Add creative branding, UI growth hacks, and artistic flair."
-    davinci_response = "".join(adapter.execute(davinci_prompt, ARTIFACT_VAULT, system=davinci_sys))
+    if not personas:
+        # Fallback if creation failed
+        personas = [
+            {"name": "Socrates", "role": "Philosopher", "system_prompt": "You are a logical strategist."},
+            {"name": "Da Vinci", "role": "Creative", "system_prompt": "You are a creative UI artist."}
+        ]
+
+    # Base context
+    context = "Goal: Expand the user's business capabilities. Analyze yesterday's performance logs."
     
-    # 3. Orchestrator (Synthesis & Planning - Loads Roadmap Skills)
+    debates = []
+    
+    # Run loop through each distinct dynamic persona
+    for persona in personas:
+        push_state(persona['name'].upper(), "THINKING", f"{persona['role']} Review")
+        print(f"Council Member {persona['name']} is evaluating...")
+        
+        prompt = f"Analyze the following context through your specific skillset. Propose an implementation plan.\nContext: {context}"
+        response = "".join(adapter.execute(prompt, ARTIFACT_VAULT, system=persona['system_prompt']))
+        
+        debates.append(f"### {persona['name']} ({persona['role']})\n{response}\n")
+    
+    # Synthesis by Orchestrator
     push_state("ORCHESTRATOR", "EXECUTING", "Perfecting Morning Briefing")
-    orch_sys = load_persona("orchestrator")
-    final_prompt = f"Synthesize Socrates and Da Vinci's debate into a finalized implementation plan.\nSocrates: {socrates_response}\nDa Vinci: {davinci_response}"
-    final_plan = "".join(adapter.execute(final_prompt, ARTIFACT_VAULT, system=orch_sys))
+    final_prompt = "Synthesize the following council debate into a single finalized, perfect implementation plan for the user:\n\n" + "\n".join(debates)
+    final_plan = "".join(adapter.execute(final_prompt, ARTIFACT_VAULT, system="You are the Orchestrator. Finalize the optimal plan."))
     
     # Save the Artifact
     timestamp = datetime.now().strftime('%Y-%m-%d')
     artifact_path = os.path.join(ARTIFACT_VAULT, f"Morning_Briefing_Council_{timestamp}.md")
     
-    briefing_content = f"# Morning Briefing: {timestamp}\n\n## The Council Debate\n\n### Socrates' Logical Analysis\n{socrates_response}\n\n### Da Vinci's Creative Vision\n{davinci_response}\n\n## Final Implementation Plan\n{final_plan}"
+    briefing_content = f"# Morning Briefing: {timestamp}\n\n## The Dynamic Council Debate\n\n" + "\n".join(debates) + f"\n\n## 🚀 Final Synthesized Implementation Plan\n{final_plan}"
     
     with open(artifact_path, "w") as f:
         f.write(briefing_content)
     
     push_state("OS_DREAM_COUNCIL", "SUCCESS", f"Morning Briefing saved to {artifact_path}")
+    print(f"Council finished. Saved to {artifact_path}")
 
 def scheduler_loop():
     import schedule
