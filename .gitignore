@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+.venv/
+__pycache__/
+*.log
+.env
+.DS_Store
+db.sqlite
+*.db
+memory/
+artifacts/

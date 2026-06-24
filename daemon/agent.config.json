@@ -1,0 +1,7 @@
+{
+  "engine_type": "http",
+  "exec_command": ["agy", "-p", "{prompt}"],
+  "endpoint": "http://127.0.0.1:8642/v1/chat/completions",
+  "obsidian_vault": "~/Obsidian/Agent-Memory",
+  "artifacts_dir": "~/agent-os/artifacts"
+}
